@@ -109,14 +109,20 @@ InfluxDB UI: <http://localhost:8086> — kimlik bilgileri `.env`'de.
 
 ### State haritalaması (üzerinde anlaşılan)
 
-Grafana sorguları aşağıdaki dört state'i bekler:
+Grafana sorguları aşağıdaki dört state'i bekler. **Etiketler 2026-05-08
+sonu kullanıcı isteğiyle yeniden adlandırıldı** — eski `ACTIVE` artık
+`RUNNING`, eski `RUNNING` (idle) artık `IDLE`:
 
-| Etiket    | Koşul                                                           |
-| --------- | --------------------------------------------------------------- |
-| `OFFLINE` | `mtconnect_status.reachable=false`                              |
-| `STOPPED` | `reachable=true` AND `Availability=UNAVAILABLE`                 |
-| `RUNNING` | `Availability=AVAILABLE` AND `Execution!=ACTIVE`                |
-| `ACTIVE`  | `Execution=ACTIVE` (program in-cycle)                           |
+| Etiket    | Koşul                                                              | MTConnect karşılığı (sorgularda kalır) |
+| --------- | ------------------------------------------------------------------ | -------------------------------------- |
+| `OFFLINE` | `mtconnect_status.reachable=false`                                 | —                                      |
+| `STOPPED` | `Execution=UNAVAILABLE`                                            | `r._value == "UNAVAILABLE"`            |
+| `IDLE`    | `Execution IN (READY, STOPPED, INTERRUPTED, FEED_HOLD)`            | else dalı                              |
+| `RUNNING` | `Execution=ACTIVE` (program in-cycle, takım işliyor)               | `r._value == "ACTIVE"`                 |
+
+> Flux sorgularında `r._value == "ACTIVE"` MTConnect ham veri değeridir
+> ve **DEĞİŞMEZ**. Yalnızca dashboard çıktı etiketleri (state kolon adı,
+> mappings, override matchers) `RUNNING` / `IDLE` adlarını kullanır.
 
 Süre hesabı için **count × POLL_INTERVAL** yaklaşımı kullanılır
 (2 sn polling, ±2 sn hata payı). İleride istenirse `stateDuration()`

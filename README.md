@@ -166,6 +166,116 @@ ile değişikliği uygula. Format:
 }
 ```
 
+## Yeni sunucuya kurulum (taşıma)
+
+Bu kurulum tamamen `docker compose` ile çalışır — taşıma için **5 dosya
++ 1 klasör** yeterli, başka host bağımlılığı yok:
+
+```text
+docker-compose.yml
+.env                          (commitlenmiyor, manuel kopyalanır)
+machines.json
+collector/                    (Dockerfile + collector.py + requirements.txt)
+grafana/provisioning/         (datasource + dashboard provider yaml)
+grafana/dashboards/*.json     (dashboard tanımları)
+```
+
+### Hedef sunucu ön gereklilikler
+
+- **Docker Engine ≥ 24** veya **Docker Desktop**. Linux için
+  `apt install docker.io docker-compose-plugin` yeter.
+- En az **2 GB RAM** (InfluxDB + Grafana + Python). 5 tezgah için 1 GB de
+  çalışır ama dar olur.
+- **Disk**: collector günde ~10 milyon nokta yazıyor (5 tezgah × 30 nokta/sn
+  × 86400 / 2 sn). Ham bucket için 30 günlük retention istersen ~5–10 GB
+  ayır. Sınırsız retention bırakırsan disk dolar; aşağıdaki "retention"
+  notuna bak.
+- **Ağ**: Tezgahların IP'lerine (`192.168.1.112-116:8082`) erişebilen bir
+  ağda olmalı. UI portları (`8086`, `3000`) sunucuda dinleyecek; gerekirse
+  dış erişim için reverse proxy / firewall kuralı.
+
+### Adım adım kurulum
+
+```bash
+# 1) Reposu klonla (veya sıkıştırılmış arşivi kopyala)
+git clone https://github.com/serkankose77/SE-HAVACILIK-OEE.git
+cd SE-HAVACILIK-OEE
+
+# 2) .env dosyasını oluştur, güçlü şifre + token üret
+cp .env.example .env
+# Linux:    openssl rand -hex 32
+# Windows:  -join ((1..32) | % { '{0:x2}' -f (Get-Random -Maximum 256) })
+# Çıkan değeri INFLUX_TOKEN'a yaz; INFLUX_PASSWORD ve GRAFANA_ADMIN_PASSWORD
+# alanlarına da güçlü şifreler yaz.
+nano .env
+
+# 3) Tezgah listesini düzenle (IP / hostname yeni ortamda farklıysa)
+nano machines.json
+
+# 4) Stack'i ayağa kaldır
+docker compose up -d --build
+
+# 5) Sağlık kontrolü
+curl http://localhost:8086/health      # InfluxDB
+curl http://localhost:3000/api/health  # Grafana
+docker compose logs -f collector       # collector poll loop
+```
+
+**Etkin URL'ler**:
+
+- InfluxDB UI: <http://localhost:8086> (kullanıcı: `.env` `INFLUX_USERNAME`)
+- Grafana UI: <http://localhost:3000> (kullanıcı: `.env` `GRAFANA_ADMIN_USER`)
+
+### Container imaj versiyonları sabit
+
+`docker-compose.yml` üç imaj kullanıyor, hepsi versiyon-pinned:
+
+- `influxdb:2.7` — InfluxDB OSS 2.7
+- `grafana/grafana-oss:11.3.0` — Grafana OSS 11.3
+- `python:3.12-slim` — collector base image (Dockerfile'dan local build)
+
+Bu sabitleme, taşımada **aynı sürümün geleceğini garanti eder**. Yan
+sunucuya götürdüğünde aynı imajları indirir.
+
+### Veri ve yapılandırmayı taşımak
+
+Yeni sunucuya **mevcut bucket verisini de** taşımak istersen:
+
+```bash
+# Eski sunucu - dump
+docker compose exec influxdb influx backup /tmp/backup --token "$INFLUX_TOKEN"
+docker cp oee-influxdb:/tmp/backup ./influx-backup
+
+# Yeni sunucu - restore (compose up -d sonrası)
+docker cp ./influx-backup oee-influxdb:/tmp/backup
+docker compose exec influxdb influx restore /tmp/backup --token "$INFLUX_TOKEN"
+```
+
+Sıfır veriyle başlamak istersen sadece `compose up -d --build` yeter,
+collector çalışmaya başlayınca tarihçe sıfırdan dolar.
+
+### Reverse proxy (opsiyonel)
+
+İç ağda `https://oee.firma.local` gibi bir alan istersen `nginx` veya
+`caddy` ile `8086` ve `3000` portlarını proxy'leyebilirsin. Compose
+servisleri zaten `oee-net` bridge ağında — proxy container'ı da aynı
+ağa sokarsan host portunu kapatabilirsin (sadece proxy port açıkta
+kalır).
+
+### Retention notu
+
+`.env`'deki `INFLUX_RETENTION=0` (sınırsız) varsayılan. Üretimde
+30 gün gibi bir sınır koymak istersen:
+
+```bash
+# Saniye cinsinden, örn. 30 gün
+INFLUX_RETENTION=2592000
+```
+
+Veya InfluxDB UI'dan bucket retention'ı sonradan değiştirebilirsin.
+İleride saatlik/günlük rollup task'ı eklenirse raw bucket için bu sınır
+güvenli olur.
+
 ## Sorun giderme
 
 **Collector "fetch ... failed" yazıyor.** Tezgah ağı erişilemez ya da
@@ -187,10 +297,14 @@ collector aynı token'ı kullanır. Token'ı değiştirmek için bucket'ı
 sıfırlamanız gerekir (`down -v`) veya Influx UI'dan yeni bir token
 oluşturup `.env` ve `docker compose restart collector` yapın.
 
-## Grafana panosu
+## Grafana panoları
 
-Provisioning ile otomatik yüklenen dashboard: **OEE → SE Havacılık - Tezgah
-OEE Genel Bakış** (`uid=oee-overview`).
+Provisioning ile otomatik yüklenen iki dashboard:
+
+| UID                   | Başlık                                | Amaç                                                            |
+| --------------------- | ------------------------------------- | --------------------------------------------------------------- |
+| `oee-overview`        | SE Havacılık - Tezgah OEE Genel Bakış | 5 tezgahın yüzdeleri, state timeline, program tablosu, Mesai-OEE |
+| `oee-machine-detail`  | SE Havacılık - Tezgah Detay           | Seçili tezgahın haftalık çizelgesi, her tezgah için ayrı pasta, haftalık + aylık running süresi |
 
 ### State haritalaması
 
@@ -200,21 +314,26 @@ Dashboard sorguları MTConnect verisinden 4 state üretir:
 | --------- | ------- | --------------------------------------------------------------- |
 | `OFFLINE` | Kırmızı | `mtconnect_status.reachable=false` (MTConnect agent erişilemez) |
 | `STOPPED` | Turuncu | `Execution=UNAVAILABLE` (tezgah açık ama kontrolör veri vermiyor)|
-| `RUNNING` | Mavi    | `Execution IN (READY, STOPPED, INTERRUPTED, FEED_HOLD)` (idle)  |
-| `ACTIVE`  | Yeşil   | `Execution=ACTIVE` (program in-cycle)                           |
+| `IDLE`    | Mavi    | `Execution IN (READY, STOPPED, INTERRUPTED, FEED_HOLD)` (boşta) |
+| `RUNNING` | Yeşil   | `Execution=ACTIVE` (program in-cycle, tezgah çalışıyor)         |
 
-### Paneller
+### Paneller — `oee-overview`
 
-1. **Tezgah anlık durumu** — son 10 dakikadaki en güncel state, 5 tezgah
-   için renkli stat panel.
-2. **State yüzdeleri (tezgah başına)** — seçili zaman aralığında her
-   tezgahın 4 state'te geçirdiği zaman yüzdesi.
-3. **Toplam state dağılımı** — tüm tezgahların toplam dağılımı (donut).
-4. **State zaman çizelgesi** — tezgah × zaman ızgarasında state-timeline.
-5. **Program çalışma süresi** — tezgah/program kombinasyonu için toplam
-   süre tablosu.
-6. **Aralıkta üretilen parça** — tezgah başına `PartCount` değeri (delta:
-   son − ilk).
+1. **Tezgah anlık durumu** — son 10 dk'daki en güncel state, 5 tezgah için renkli kart.
+2. **State yüzdeleri (tezgah başına)** — bar gauge, vardiya filtresinin %100'üne göre.
+3. **Toplam state dağılımı** — tüm tezgahların donut'u.
+4. **State zaman çizelgesi** — tezgah × zaman ızgarası.
+5. **Program çalışma süresi** — tezgah/program tablosu, % gauge sütunu, son çalışma.
+6. **RUNNING çalışma süresi** — tezgah başına saat cinsinden running süresi.
+7. **Cycle sayısı** — tezgah başına `RUNNING → !RUNNING` geçişleri (parça proxy'si).
+8. **Mesai OEE - Running %** — tezgah başına Availability (mesai-bazlı, ek mesai içindeki RUNNING dahil).
+
+### Paneller — `oee-machine-detail`
+
+1. **Seçili tezgah haftalık state çizelgesi** — `$machine` değişkeni ile filtrelenmiş timeline.
+2. **Tezgah başı pasta** — 5 ayrı donut (Grafana repeat ile her tezgah için).
+3. **Haftalık running süresi** — son 7 gün, tezgah başına saat.
+4. **Aylık running süresi** — son 30 gün, tezgah başına saat.
 
 ### Tarih aralığı
 
