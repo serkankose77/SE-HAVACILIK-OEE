@@ -1,0 +1,259 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Tezgah detayi: secili tezgahin haftalik state cizelgesi, her tezgah icin ayri state pasta grafigi, toplam haftalik ve aylik running (Execution=ACTIVE) sureleri.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": ["oee"],
+      "targetBlank": false,
+      "title": "OEE genel bakis",
+      "tooltip": "Cok-tezgah OEE genel bakis dashboard'i",
+      "type": "dashboards",
+      "url": ""
+    }
+  ],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Secili tezgah - haftalik state cizelgesi",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Secili tezgahin son 7 gunluk state cizelgesi. Renkler: RUNNING=yesil (Execution=ACTIVE), IDLE=mavi, STOPPED=turuncu, OFFLINE=kirmizi.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "fillOpacity": 70, "lineWidth": 0 },
+          "mappings": [
+            { "options": { "RUNNING": { "color": "green",  "index": 0 } }, "type": "value" },
+            { "options": { "IDLE":    { "color": "blue",   "index": 1 } }, "type": "value" },
+            { "options": { "STOPPED": { "color": "orange", "index": 2 } }, "type": "value" },
+            { "options": { "OFFLINE": { "color": "red",    "index": 3 } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "alignValue": "left",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "reach = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r.machine_id == \"${machine}\" and r._measurement == \"mtconnect_status\" and r._field == \"reachable\")\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value then \"_ONLINE\" else \"OFFLINE\" }))\n\nexec = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r.machine_id == \"${machine}\" and r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> map(fn: (r) => ({\n      _time: r._time,\n      machine_name: r.machine_name,\n      _value: if r._value == \"ACTIVE\" then \"RUNNING\"\n              else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n              else \"IDLE\"\n  }))\n\nunion(tables: [reach, exec])\n  |> filter(fn: (r) => r._value != \"_ONLINE\")\n  |> group(columns: [\"machine_name\"])\n  |> sort(columns: [\"_time\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Secili tezgah haftalik state cizelgesi - $machine",
+      "type": "state-timeline"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
+      "id": 101,
+      "panels": [],
+      "title": "Tezgah basi state dagilimi (pasta)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Secili tarih araliginda her tezgah icin state suresi dagilimi.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "unit": "s"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "RUNNING" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green"  } } ] },
+          { "matcher": { "id": "byName", "options": "IDLE" },    "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue"   } } ] },
+          { "matcher": { "id": "byName", "options": "STOPPED" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "OFFLINE" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red"    } } ] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 11 },
+      "id": 2,
+      "maxPerRow": 3,
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "values": ["percent"] },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.3.0",
+      "repeat": "pie_machine",
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r.machine_id == \"${pie_machine}\" and r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: \"OFFLINE\", _value: float(v: r._value) * poll }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r.machine_id == \"${pie_machine}\" and r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> map(fn: (r) => ({ r with state:\n      if r._value == \"ACTIVE\" then \"RUNNING\"\n      else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n      else \"IDLE\"\n  }))\n  |> group(columns: [\"state\"])\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: r.state, _value: float(v: r._value) * poll }))\n\nunion(tables: [offline, exec_states])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"state\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "title": "$pie_machine",
+      "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "id": 102,
+      "panels": [],
+      "title": "Toplam running sureleri",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Son 7 gunde tum tezgahlarin toplam RUNNING (Execution=ACTIVE) suresi. Time-picker bu paneli etkilemez; her zaman -7d araligini kullanir.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 28 },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\" and r._value == \"ACTIVE\")\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: float(v: r._value) * poll / 3600.0\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Haftalik running suresi (son 7 gun, tezgah basina)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Son 30 gunde tum tezgahlarin toplam RUNNING (Execution=ACTIVE) suresi. Time-picker bu paneli etkilemez; her zaman -30d araligini kullanir.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 28 },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: -30d)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\" and r._value == \"ACTIVE\")\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: float(v: r._value) * poll / 3600.0\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Aylik running suresi (son 30 gun, tezgah basina)",
+      "type": "stat"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["oee", "mtconnect", "se-havacilik", "machine-detail"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "umc400", "value": "umc400" },
+        "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"mtconnect\", tag: \"machine_id\")",
+        "includeAll": false,
+        "label": "Tezgah",
+        "multi": false,
+        "name": "machine",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"mtconnect\", tag: \"machine_id\")",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"mtconnect\", tag: \"machine_id\")",
+        "description": "Pasta grafiklerini her tezgah icin tekrarlamak icin kullanilan gizli degisken.",
+        "hide": 2,
+        "includeAll": true,
+        "label": "Pasta repeat",
+        "multi": true,
+        "name": "pie_machine",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"mtconnect\", tag: \"machine_id\")",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": true,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["1m", "5m", "15m", "30m", "1h"],
+    "time_options": ["6h", "12h", "24h", "2d", "7d", "30d", "90d"]
+  },
+  "timezone": "browser",
+  "title": "SE Havacilik - Tezgah Detay",
+  "uid": "oee-machine-detail",
+  "version": 1,
+  "weekStart": ""
+}
