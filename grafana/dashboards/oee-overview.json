@@ -1,0 +1,407 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Haas tezgahlarinin active / running / stopped / offline yuzde dagilimi, program calisma suresi ve ACTIVE calisma suresi. State haritalamasi: OFFLINE=reachable=false, STOPPED=Execution=UNAVAILABLE, ACTIVE=Execution=ACTIVE, RUNNING=diger. PartCount Haas agent'i yayinlamadigi icin parca sayisi yerine ACTIVE suresi gosterilir.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Anlik durum",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Her tezgahin son 10 dakikadaki en guncel durumu. ACTIVE=yesil, RUNNING=mavi, STOPPED=turuncu, OFFLINE=kirmizi.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "options": { "ACTIVE":  { "color": "green",  "index": 0, "text": "ACTIVE"  } }, "type": "value" },
+            { "options": { "RUNNING": { "color": "blue",   "index": 1, "text": "RUNNING" } }, "type": "value" },
+            { "options": { "STOPPED": { "color": "orange", "index": 2, "text": "STOPPED" } }, "type": "value" },
+            { "options": { "OFFLINE": { "color": "red",    "index": 3, "text": "OFFLINE" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "status = from(bucket: \"mtconnect\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\")\n  |> last()\n  |> map(fn: (r) => ({ machine_id: r.machine_id, machine_name: r.machine_name, metric: \"reachable\", val: if r._value then \"true\" else \"false\" }))\n\nexec = from(bucket: \"mtconnect\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> last()\n  |> map(fn: (r) => ({ machine_id: r.machine_id, machine_name: r.machine_name, metric: \"execution\", val: r._value }))\n\nunion(tables: [status, exec])\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> pivot(rowKey: [\"machine_id\", \"machine_name\"], columnKey: [\"metric\"], valueColumn: \"val\")\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value:\n        if r.reachable == \"false\" then \"OFFLINE\"\n        else if not exists r.execution then \"STOPPED\"\n        else if r.execution == \"ACTIVE\" then \"ACTIVE\"\n        else if r.execution == \"UNAVAILABLE\" then \"STOPPED\"\n        else \"RUNNING\"\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Tezgah anlik durumu",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 101,
+      "panels": [],
+      "title": "Tarih araligi yuzdeleri",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Secili tarih araliginda her tezgah icin state yuzdeleri. Hesap: state'teki snapshot sayisi x 2sn / pencere suresi.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] },
+          "unit": "percent"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ACTIVE" },  "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green"  } } ] },
+          { "matcher": { "id": "byName", "options": "RUNNING" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue"   } } ] },
+          { "matcher": { "id": "byName", "options": "STOPPED" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "OFFLINE" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red"    } } ] }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 7 },
+      "id": 2,
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\nwindow_sec = float(v: int(v: v.timeRangeStop) - int(v: v.timeRangeStart)) / 1000000000.0\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      machine_id: r.machine_id,\n      machine_name: r.machine_name,\n      state: \"OFFLINE\",\n      _value: float(v: r._value) * poll * 100.0 / window_sec\n  }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> map(fn: (r) => ({ r with state:\n      if r._value == \"ACTIVE\" then \"ACTIVE\"\n      else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n      else \"RUNNING\"\n  }))\n  |> group(columns: [\"machine_id\", \"machine_name\", \"state\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      machine_id: r.machine_id,\n      machine_name: r.machine_name,\n      state: r.state,\n      _value: float(v: r._value) * poll * 100.0 / window_sec\n  }))\n\nunion(tables: [offline, exec_states])\n  |> pivot(rowKey: [\"machine_name\"], columnKey: [\"state\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "title": "State yuzdeleri (tezgah basina)",
+      "type": "bargauge",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "_time": true, "machine_id": true },
+            "indexByName": {
+              "machine_name": 0,
+              "ACTIVE": 1,
+              "RUNNING": 2,
+              "STOPPED": 3,
+              "OFFLINE": 4
+            },
+            "renameByName": { "machine_name": "Tezgah" }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Toplam dagilim (tum tezgahlar). Pasta dilimleri state surelerini gosterir (saniye).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "unit": "s"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ACTIVE" },  "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "green"  } } ] },
+          { "matcher": { "id": "byName", "options": "RUNNING" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue"   } } ] },
+          { "matcher": { "id": "byName", "options": "STOPPED" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } } ] },
+          { "matcher": { "id": "byName", "options": "OFFLINE" }, "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "red"    } } ] }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 7 },
+      "id": 3,
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "values": ["value", "percent"] },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: \"OFFLINE\", _value: float(v: r._value) * poll }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> map(fn: (r) => ({ r with state:\n      if r._value == \"ACTIVE\" then \"ACTIVE\"\n      else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n      else \"RUNNING\"\n  }))\n  |> group(columns: [\"state\"])\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: r.state, _value: float(v: r._value) * poll }))\n\nunion(tables: [offline, exec_states])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"state\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Toplam state dagilimi (tum tezgahlar)",
+      "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 102,
+      "panels": [],
+      "title": "Zaman cizelgesi",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Tezgahlarin secili zaman araliginda state degisim cizelgesi.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "fillOpacity": 70, "lineWidth": 0 },
+          "mappings": [
+            { "options": { "ACTIVE":  { "color": "green",  "index": 0 } }, "type": "value" },
+            { "options": { "RUNNING": { "color": "blue",   "index": 1 } }, "type": "value" },
+            { "options": { "STOPPED": { "color": "orange", "index": 2 } }, "type": "value" },
+            { "options": { "OFFLINE": { "color": "red",    "index": 3 } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 17 },
+      "id": 4,
+      "options": {
+        "alignValue": "left",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "auto",
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "reach = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\")\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value then \"_ONLINE\" else \"OFFLINE\" }))\n\nexec = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value == \"ACTIVE\" then \"ACTIVE\" else if r._value == \"UNAVAILABLE\" then \"STOPPED\" else \"RUNNING\" }))\n\nunion(tables: [reach, exec])\n  |> filter(fn: (r) => r._value != \"_ONLINE\")\n  |> group(columns: [\"machine_name\"])\n  |> sort(columns: [\"_time\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "State zaman cizelgesi",
+      "type": "state-timeline"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 103,
+      "panels": [],
+      "title": "Program calisma suresi ve uretim",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Tarih araliginda her tezgah icin calistirilan program ve toplam calisma suresi. % sutunu o programin secili pencerede ne kadar sure isgal ettigini gosterir.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Tezgah" },
+            "properties": [
+              { "id": "custom.width", "value": 110 },
+              { "id": "custom.filterable", "value": true }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Program" },
+            "properties": [
+              { "id": "custom.width", "value": 320 },
+              { "id": "custom.filterable", "value": true }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Calisma suresi" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.width", "value": 150 },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              { "id": "color", "value": { "mode": "continuous-GrYlRd" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "% Aralik" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "min", "value": 0 },
+              { "id": "max", "value": 100 },
+              { "id": "decimals", "value": 1 },
+              { "id": "custom.width", "value": 220 },
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient", "valueDisplayMode": "color" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Son calisma" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeFromNow" },
+              { "id": "custom.width", "value": 160 }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 14, "x": 0, "y": 27 },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": ["Calisma suresi"],
+          "reducer": ["sum"],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Calisma suresi", "desc": true } ]
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\nwindow_sec = float(v: int(v: v.timeRangeStop) - int(v: v.timeRangeStart)) / 1000000000.0\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Program\" and r._field == \"value_str\")\n  |> filter(fn: (r) => r._value != \"UNAVAILABLE\" and r._value != \"\")\n  |> map(fn: (r) => ({ r with program: r._value }))\n  |> drop(columns: [\"_value\"])\n  |> group(columns: [\"machine_name\", \"program\"])\n  |> reduce(\n      identity: {count: 0, last: time(v: 0)},\n      fn: (r, accumulator) => ({\n        count: accumulator.count + 1,\n        last: if r._time > accumulator.last then r._time else accumulator.last\n      })\n    )\n  |> map(fn: (r) => ({\n      machine_name: r.machine_name,\n      program: r.program,\n      duration_s: float(v: r.count) * poll,\n      pct: float(v: r.count) * poll * 100.0 / window_sec,\n      last_seen: r.last\n  }))",
+          "refId": "A"
+        }
+      ],
+      "title": "Program calisma suresi (tezgah / program)",
+      "type": "table",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "machine_name": 0,
+              "program": 1,
+              "duration_s": 2,
+              "pct": 3,
+              "last_seen": 4
+            },
+            "renameByName": {
+              "machine_name": "Tezgah",
+              "program": "Program",
+              "duration_s": "Calisma suresi",
+              "pct": "% Aralik",
+              "last_seen": "Son calisma"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [ { "field": "Calisma suresi", "desc": true } ]
+          }
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Aralikta tezgah basina ACTIVE durumunda gecirilen toplam sure (saat). NOT: Haas MTConnect agent'i PartCount yayinlamadigi icin gercek parca sayisi yerine ACTIVE calisma suresi gosterilir. Parca sayisi icin Haas tarafinda PartCount data item'i etkin edilmelidir.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 12, "w": 10, "x": 14, "y": 27 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "poll = 2.0\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\" and r._value == \"ACTIVE\")\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: float(v: r._value) * poll / 3600.0\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "ACTIVE calisma suresi (saat)",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["oee", "mtconnect", "se-havacilik"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"mtconnect\", tag: \"machine_id\")",
+        "includeAll": true,
+        "label": "Tezgah",
+        "multi": true,
+        "name": "machine",
+        "options": [],
+        "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"mtconnect\", tag: \"machine_id\")",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["30s", "1m", "5m", "15m", "30m", "1h"],
+    "time_options": ["1h", "6h", "12h", "24h", "2d", "7d", "30d", "90d"]
+  },
+  "timezone": "browser",
+  "title": "SE Havacilik - Tezgah OEE Genel Bakis",
+  "uid": "oee-overview",
+  "version": 5,
+  "weekStart": ""
+}
