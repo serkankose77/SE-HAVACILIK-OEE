@@ -98,13 +98,21 @@ def parse_streams(xml_bytes: bytes):
 
 
 def to_points(machine_id: str, machine: dict, xml_bytes: bytes) -> list[Point]:
+    """Build influx points for one snapshot.
+
+    All points share the collection timestamp (now), so static MTConnect
+    DataItems whose XML timestamp never changes still produce a fresh row
+    on every poll. The original MTConnect timestamp is preserved as a
+    `source_ts` field for downstream consumers that need it.
+    """
     points: list[Point] = []
+    collected_at = datetime.now(timezone.utc)
     try:
         for category, item_type, attrs, text, comp_attrs in parse_streams(xml_bytes):
-            ts = _parse_iso(attrs.get("timestamp"))
             name = attrs.get("name") or attrs.get("dataItemId") or item_type
             sub_type = attrs.get("subType") or ""
             comp_name = comp_attrs.get("component") or comp_attrs.get("name") or ""
+            source_ts = attrs.get("timestamp") or ""
 
             point = (
                 Point(MEASUREMENT)
@@ -115,10 +123,12 @@ def to_points(machine_id: str, machine: dict, xml_bytes: bytes) -> list[Point]:
                 .tag("item_type", item_type)
                 .tag("name", name)
                 .tag("component", comp_name)
-                .time(ts, WritePrecision.NS)
+                .time(collected_at, WritePrecision.NS)
             )
             if sub_type:
                 point.tag("sub_type", sub_type)
+            if source_ts:
+                point.field("source_ts", source_ts)
 
             value = (text or "").strip()
 

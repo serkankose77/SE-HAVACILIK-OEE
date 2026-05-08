@@ -8,8 +8,9 @@ göreve başla.
 
 - **Sahip / kullanıcı**: Serkan Köse (`serkankose77`), SE Havacılık.
 - **Amaç**: 5 adet Haas CNC tezgahından MTConnect (port 8082) ile veri
-  toplayıp InfluxDB 2.7'ye yazmak. Üstüne ileride OEE hesabı + arayüz
-  gelecek; **şu an yalnızca veri toplama fazındayız.**
+  toplayıp InfluxDB 2.7'ye yazmak ve Grafana ile günlük/haftalık/aylık
+  state (active/running/stopped/offline) yüzdelerini + program çalışma
+  süresi ve parça sayısını raporlamak.
 - **Kardeş repo**: [HaasCNC-Dashboard](https://github.com/serkankose77/HaasCNC-Dashboard)
   — aynı 5 tezgahın canlı durum panosu; bu repodan tamamen ayrı.
 
@@ -37,9 +38,11 @@ InfluxDB 2.7 (Docker, bucket=mtconnect)
 | `collector/collector.py`        | Tek dosyalık polling collector. Tüm DataItem'ları yazar.        |
 | `collector/Dockerfile`          | python:3.12-slim üzerinde, non-root (1000:1000) çalışır.        |
 | `collector/requirements.txt`    | `requests`, `influxdb-client`. Yeni bağımlılık eklersen Dockerfile'ı yeniden build et. |
-| `docker-compose.yml`            | InfluxDB + collector. Healthcheck + bağımlılık zinciri.         |
+| `docker-compose.yml`            | InfluxDB + collector + grafana. Healthcheck + bağımlılık zinciri.|
 | `.env.example`                  | Şablon. `.env` `.gitignore`'da; **asla commitlenmez**.          |
 | `README.md`                     | Türkçe son kullanıcı dokümanı, Flux örnekleri.                  |
+| `grafana/provisioning/`         | Datasource + dashboard provider tanımları (kod-olarak yapılandırma). |
+| `grafana/dashboards/*.json`     | Dashboard JSON'ları. Düzenle → `restart grafana` (provisioning yeniden yükler). |
 
 ## Veri şeması (kısa)
 
@@ -95,20 +98,41 @@ InfluxDB UI: <http://localhost:8086> — kimlik bilgileri `.env`'de.
 - Yeni dosya / paket eklerken minimum tut: tek dosyalık collector
   bilinçli bir tercih, çoklu modüle bölmek için somut bir gerekçe olsun.
 
-## Scope koruma
+## Scope
 
-Aşağıdaki işler "ileride" kategorisinde — kullanıcı açıkça istemeden
-**eklemeyin**:
+Şu an proje **iki katmandan** oluşuyor:
 
-- Grafana servis tanımı / pano JSON'ları
-- OEE matematiği (Availability × Performance × Quality)
-- Vardiya / planlı duruş takvimi
-- Kullanıcı arayüzü, REST API, kimlik doğrulama
-- Telegraf (collector zaten yazıyor — Telegraf gereksiz katman olur)
-- Alarm / Slack / e-posta entegrasyonu
+1. **Veri toplama** (collector → InfluxDB) — birinci faz, tamam.
+2. **Görselleştirme** (Grafana → InfluxDB) — kullanıcı 2026-05-08'de
+   istedi; aktif geliştirme. State haritalaması, dashboard JSON'ları,
+   provisioning dosyaları artık scope içinde.
 
-Bu repo veri toplama boru hattıdır. Yeni kapsam isteklerini önce kullanıcıyla
-doğrulayın.
+### State haritalaması (üzerinde anlaşılan)
+
+Grafana sorguları aşağıdaki dört state'i bekler:
+
+| Etiket    | Koşul                                                           |
+| --------- | --------------------------------------------------------------- |
+| `OFFLINE` | `mtconnect_status.reachable=false`                              |
+| `STOPPED` | `reachable=true` AND `Availability=UNAVAILABLE`                 |
+| `RUNNING` | `Availability=AVAILABLE` AND `Execution!=ACTIVE`                |
+| `ACTIVE`  | `Execution=ACTIVE` (program in-cycle)                           |
+
+Süre hesabı için **count × POLL_INTERVAL** yaklaşımı kullanılır
+(2 sn polling, ±2 sn hata payı). İleride istenirse `stateDuration()`
+ile time-weighted hesaba geçilebilir.
+
+### Hâlâ scope dışı (kullanıcı açıkça istemedikçe eklemeyin)
+
+- OEE matematiğinin tam halinin (Availability × Performance × Quality)
+  formülize edilmiş şekilde yazımı — yalnızca state yüzdeleri + program
+  süresi + parça sayısı raporlanıyor şu an.
+- Vardiya / planlı duruş takvimi (raw Availability hesaplanıyor).
+- REST API, custom UI, kimlik doğrulama (Grafana hariç).
+- Telegraf (collector zaten yazıyor — Telegraf gereksiz katman olur).
+- Alarm / Slack / e-posta entegrasyonu.
+
+Yeni kapsam isteklerini önce kullanıcıyla doğrulayın.
 
 ## Değişiklik / commit kuralları
 
