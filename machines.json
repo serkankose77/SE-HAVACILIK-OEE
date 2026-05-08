@@ -1,0 +1,37 @@
+{
+  "vf6": {
+    "name":  "VF-6/40",
+    "model": "Haas VF-6/40 · 3-axis mill",
+    "host":  "192.168.1.113",
+    "port":  8082,
+    "type":  "mill"
+  },
+  "vf4": {
+    "name":  "VF-4",
+    "model": "Haas VF-4 · 3-axis mill",
+    "host":  "192.168.1.115",
+    "port":  8082,
+    "type":  "mill"
+  },
+  "umc400": {
+    "name":  "UMC-400",
+    "model": "Haas UMC-400 · 5-axis mill",
+    "host":  "192.168.1.114",
+    "port":  8082,
+    "type":  "mill"
+  },
+  "umc750": {
+    "name":  "UMC-750",
+    "model": "Haas UMC-750 · 5-axis mill",
+    "host":  "192.168.1.116",
+    "port":  8082,
+    "type":  "mill"
+  },
+  "st10": {
+    "name":  "ST-10",
+    "model": "Haas ST-10 · Lathe",
+    "host":  "192.168.1.112",
+    "port":  8082,
+    "type":  "lathe"
+  }
+}
