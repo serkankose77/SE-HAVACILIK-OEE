@@ -110,7 +110,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
-          "query": "import \"date\"\n\nshift_filter = (r) => ${shift}\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ machine_id: r.machine_id, machine_name: r.machine_name, state: \"OFFLINE\" }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({\n      machine_id: r.machine_id,\n      machine_name: r.machine_name,\n      state: if r._value == \"ACTIVE\" then \"ACTIVE\"\n             else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n             else \"RUNNING\"\n  }))\n\nunion(tables: [offline, exec_states])\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> reduce(\n      identity: { active_n: 0, running_n: 0, stopped_n: 0, offline_n: 0, total_n: 0 },\n      fn: (r, accumulator) => ({\n        active_n:  accumulator.active_n  + (if r.state == \"ACTIVE\"  then 1 else 0),\n        running_n: accumulator.running_n + (if r.state == \"RUNNING\" then 1 else 0),\n        stopped_n: accumulator.stopped_n + (if r.state == \"STOPPED\" then 1 else 0),\n        offline_n: accumulator.offline_n + (if r.state == \"OFFLINE\" then 1 else 0),\n        total_n:   accumulator.total_n   + 1\n      })\n    )\n  |> map(fn: (r) => ({\n      machine_name: r.machine_name,\n      ACTIVE:  float(v: r.active_n)  / float(v: r.total_n) * 100.0,\n      RUNNING: float(v: r.running_n) / float(v: r.total_n) * 100.0,\n      STOPPED: float(v: r.stopped_n) / float(v: r.total_n) * 100.0,\n      OFFLINE: float(v: r.offline_n) / float(v: r.total_n) * 100.0\n  }))",
+          "query": "import \"date\"\n\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nshift_filter = (r) => ${shift}\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ machine_id: r.machine_id, machine_name: r.machine_name, state: \"OFFLINE\" }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({\n      machine_id: r.machine_id,\n      machine_name: r.machine_name,\n      state: if r._value == \"ACTIVE\" then \"ACTIVE\"\n             else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n             else \"RUNNING\"\n  }))\n\nunion(tables: [offline, exec_states])\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> reduce(\n      identity: { active_n: 0, running_n: 0, stopped_n: 0, offline_n: 0, total_n: 0 },\n      fn: (r, accumulator) => ({\n        active_n:  accumulator.active_n  + (if r.state == \"ACTIVE\"  then 1 else 0),\n        running_n: accumulator.running_n + (if r.state == \"RUNNING\" then 1 else 0),\n        stopped_n: accumulator.stopped_n + (if r.state == \"STOPPED\" then 1 else 0),\n        offline_n: accumulator.offline_n + (if r.state == \"OFFLINE\" then 1 else 0),\n        total_n:   accumulator.total_n   + 1\n      })\n    )\n  |> map(fn: (r) => ({\n      machine_name: r.machine_name,\n      ACTIVE:  float(v: r.active_n)  / float(v: r.total_n) * 100.0,\n      RUNNING: float(v: r.running_n) / float(v: r.total_n) * 100.0,\n      STOPPED: float(v: r.stopped_n) / float(v: r.total_n) * 100.0,\n      OFFLINE: float(v: r.offline_n) / float(v: r.total_n) * 100.0\n  }))",
           "refId": "A"
         }
       ],
@@ -162,7 +162,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
-          "query": "import \"date\"\n\npoll = 2.0\nshift_filter = (r) => ${shift}\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> filter(fn: shift_filter)\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: \"OFFLINE\", _value: float(v: r._value) * poll }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ r with state:\n      if r._value == \"ACTIVE\" then \"ACTIVE\"\n      else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n      else \"RUNNING\"\n  }))\n  |> group(columns: [\"state\"])\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: r.state, _value: float(v: r._value) * poll }))\n\nunion(tables: [offline, exec_states])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"state\"], valueColumn: \"_value\")",
+          "query": "import \"date\"\n\npoll = 2.0\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nshift_filter = (r) => ${shift}\n\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> filter(fn: shift_filter)\n  |> group()\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: \"OFFLINE\", _value: float(v: r._value) * poll }))\n\nexec_states = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ r with state:\n      if r._value == \"ACTIVE\" then \"ACTIVE\"\n      else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n      else \"RUNNING\"\n  }))\n  |> group(columns: [\"state\"])\n  |> count()\n  |> map(fn: (r) => ({ _time: now(), state: r.state, _value: float(v: r._value) * poll }))\n\nunion(tables: [offline, exec_states])\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"state\"], valueColumn: \"_value\")",
           "refId": "A"
         }
       ],
@@ -208,7 +208,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
-          "query": "import \"date\"\n\nshift_filter = (r) => ${shift}\n\nreach = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value then \"_ONLINE\" else \"OFFLINE\" }))\n\nexec = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value == \"ACTIVE\" then \"ACTIVE\" else if r._value == \"UNAVAILABLE\" then \"STOPPED\" else \"RUNNING\" }))\n\nunion(tables: [reach, exec])\n  |> filter(fn: (r) => r._value != \"_ONLINE\")\n  |> group(columns: [\"machine_name\"])\n  |> sort(columns: [\"_time\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+          "query": "import \"date\"\n\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nshift_filter = (r) => ${shift}\n\nreach = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value then \"_ONLINE\" else \"OFFLINE\" }))\n\nexec = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> map(fn: (r) => ({ _time: r._time, machine_name: r.machine_name, _value: if r._value == \"ACTIVE\" then \"ACTIVE\" else if r._value == \"UNAVAILABLE\" then \"STOPPED\" else \"RUNNING\" }))\n\nunion(tables: [reach, exec])\n  |> filter(fn: (r) => r._value != \"_ONLINE\")\n  |> group(columns: [\"machine_name\"])\n  |> sort(columns: [\"_time\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
           "refId": "A"
         }
       ],
@@ -299,7 +299,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
-          "query": "import \"date\"\n\npoll = 2.0\nshift_filter = (r) => ${shift}\n\nbase = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Program\" and r._field == \"value_str\")\n  |> filter(fn: (r) => r._value != \"UNAVAILABLE\" and r._value != \"\")\n  |> filter(fn: shift_filter)\n\n// Vardiya icindeki TOPLAM Program snapshot sayisi -> yuzde paydasi\nshift_total_n = (base\n  |> group()\n  |> count()\n  |> findRecord(fn: (key) => true, idx: 0))._value\n\nbase\n  |> map(fn: (r) => ({ r with program: r._value }))\n  |> drop(columns: [\"_value\"])\n  |> group(columns: [\"machine_name\", \"program\"])\n  |> reduce(\n      identity: {count: 0, last: time(v: 0)},\n      fn: (r, accumulator) => ({\n        count: accumulator.count + 1,\n        last: if r._time > accumulator.last then r._time else accumulator.last\n      })\n    )\n  |> map(fn: (r) => ({\n      machine_name: r.machine_name,\n      program: r.program,\n      duration_s: float(v: r.count) * poll,\n      pct: float(v: r.count) / float(v: shift_total_n) * 100.0,\n      last_seen: r.last\n  }))",
+          "query": "import \"date\"\n\npoll = 2.0\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nshift_filter = (r) => ${shift}\n\nbase = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Program\" and r._field == \"value_str\")\n  |> filter(fn: (r) => r._value != \"UNAVAILABLE\" and r._value != \"\")\n  |> filter(fn: shift_filter)\n\n// Vardiya icindeki TOPLAM Program snapshot sayisi -> yuzde paydasi\nshift_total_n = (base\n  |> group()\n  |> count()\n  |> findRecord(fn: (key) => true, idx: 0))._value\n\nbase\n  |> map(fn: (r) => ({ r with program: r._value }))\n  |> drop(columns: [\"_value\"])\n  |> group(columns: [\"machine_name\", \"program\"])\n  |> reduce(\n      identity: {count: 0, last: time(v: 0)},\n      fn: (r, accumulator) => ({\n        count: accumulator.count + 1,\n        last: if r._time > accumulator.last then r._time else accumulator.last\n      })\n    )\n  |> map(fn: (r) => ({\n      machine_name: r.machine_name,\n      program: r.program,\n      duration_s: float(v: r.count) * poll,\n      pct: float(v: r.count) / float(v: shift_total_n) * 100.0,\n      last_seen: r.last\n  }))",
           "refId": "A"
         }
       ],
@@ -363,7 +363,7 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
-          "query": "import \"date\"\n\npoll = 2.0\nshift_filter = (r) => ${shift}\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\" and r._value == \"ACTIVE\")\n  |> filter(fn: shift_filter)\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: float(v: r._value) * poll / 3600.0\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
+          "query": "import \"date\"\n\npoll = 2.0\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nshift_filter = (r) => ${shift}\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\" and r._value == \"ACTIVE\")\n  |> filter(fn: shift_filter)\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> count()\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: float(v: r._value) * poll / 3600.0\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
       ],
@@ -406,11 +406,64 @@
       "targets": [
         {
           "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
-          "query": "import \"date\"\n\nshift_filter = (r) => ${shift}\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> sort(columns: [\"_time\"])\n  |> map(fn: (r) => ({ r with is_active: if r._value == \"ACTIVE\" then 1 else 0 }))\n  |> reduce(\n      identity: { prev_active: 0, cycles: 0 },\n      fn: (r, accumulator) => ({\n        prev_active: r.is_active,\n        cycles: accumulator.cycles + (if accumulator.prev_active == 1 and r.is_active == 0 then 1 else 0)\n      })\n    )\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: r.cycles\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
+          "query": "import \"date\"\n\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nshift_filter = (r) => ${shift}\n\nfrom(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: shift_filter)\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> sort(columns: [\"_time\"])\n  |> map(fn: (r) => ({ r with is_active: if r._value == \"ACTIVE\" then 1 else 0 }))\n  |> reduce(\n      identity: { prev_active: 0, cycles: 0 },\n      fn: (r, accumulator) => ({\n        prev_active: r.is_active,\n        cycles: accumulator.cycles + (if accumulator.prev_active == 1 and r.is_active == 0 then 1 else 0)\n      })\n    )\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: r.cycles\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
           "refId": "A"
         }
       ],
       "title": "Cycle sayisi (uretilen parca proxy)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 46 },
+      "id": 105,
+      "panels": [],
+      "title": "Mesai-bazli OEE",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+      "description": "Tezgah basina mesai-bazli Availability OEE'si. Mesai = V1 (08:30-18:30) + V2 (20:30-06:30). Ek mesai saatlerinde tezgah ACTIVE ise o sure de mesaiye dahil edilir (kullanici plansiz uretimi mesai gibi sayar). Formul: ACTIVE_n / (ACTIVE_n + RUNNING_n + STOPPED_n + OFFLINE_n) * 100. Performance ve Quality bilesenleri Haas agent'i tarafindan yayinlanmadigi icin saf Availability gosterilir; gercek OEE = bu deger * P * Q.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 1,
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",    "value": null },
+              { "color": "orange", "value": 40 },
+              { "color": "yellow", "value": 60 },
+              { "color": "green",  "value": 80 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 47 },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.3.0",
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "influxdb-mtconnect" },
+          "query": "import \"date\"\n\nin_v1 = (r) =>\n  (date.hour(t: r._time) == 8 and date.minute(t: r._time) >= 30) or\n  (date.hour(t: r._time) >= 9 and date.hour(t: r._time) <= 17) or\n  (date.hour(t: r._time) == 18 and date.minute(t: r._time) < 30)\n\nin_v2 = (r) =>\n  (date.hour(t: r._time) == 20 and date.minute(t: r._time) >= 30) or\n  date.hour(t: r._time) >= 21 or\n  date.hour(t: r._time) <= 5 or\n  (date.hour(t: r._time) == 6 and date.minute(t: r._time) < 30)\n\nin_shift = (r) => in_v1(r) or in_v2(r)\n\n// Execution: mesai ici tum kayitlar + ek mesaide ACTIVE\nstates = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect\" and r.item_type == \"Execution\" and r._field == \"value_str\")\n  |> filter(fn: (r) => in_shift(r) or r._value == \"ACTIVE\")\n  |> map(fn: (r) => ({\n      machine_id: r.machine_id,\n      machine_name: r.machine_name,\n      state: if r._value == \"ACTIVE\" then \"ACTIVE\"\n             else if r._value == \"UNAVAILABLE\" then \"STOPPED\"\n             else \"RUNNING\"\n  }))\n\n// Offline: sadece mesai ici\noffline = from(bucket: \"mtconnect\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"mtconnect_status\" and r._field == \"reachable\" and r._value == false)\n  |> filter(fn: in_shift)\n  |> map(fn: (r) => ({ machine_id: r.machine_id, machine_name: r.machine_name, state: \"OFFLINE\" }))\n\nunion(tables: [states, offline])\n  |> group(columns: [\"machine_id\", \"machine_name\"])\n  |> reduce(\n      identity: { active_n: 0, total_n: 0 },\n      fn: (r, accumulator) => ({\n        active_n: accumulator.active_n + (if r.state == \"ACTIVE\" then 1 else 0),\n        total_n: accumulator.total_n + 1\n      })\n    )\n  |> map(fn: (r) => ({\n      _time: now(),\n      _field: r.machine_name,\n      _value: float(v: r.active_n) / float(v: r.total_n) * 100.0\n  }))\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])\n  |> group(columns: [\"_field\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Mesai OEE - Availability (tezgah basina)",
       "type": "stat"
     }
   ],
@@ -436,18 +489,18 @@
         "type": "query"
       },
       {
-        "current": { "selected": true, "text": "24 saat", "value": "true" },
+        "current": { "selected": true, "text": "Mesai (V1+V2)", "value": "in_v1(r) or in_v2(r)" },
         "label": "Vardiya",
         "name": "shift",
-        "description": "Tum sorgulara saat-bazli filtre uygular. Yuzdeler secili vardiyanin %100'une gore hesaplanir.",
+        "description": "V1 = 08:30-18:30, V2 = 20:30-06:30. Mesai = V1 + V2 (20 saat). Bu disi Ek mesai. Tum sorgulara filtre uygular; yuzdeler secili vardiyanin %100'une gore hesaplanir.",
         "options": [
-          { "selected": true,  "text": "24 saat",       "value": "true" },
-          { "selected": false, "text": "Mesai (08-17)", "value": "date.hour(t: r._time) >= 8 and date.hour(t: r._time) < 17" },
-          { "selected": false, "text": "V1 (08-16)",    "value": "date.hour(t: r._time) >= 8 and date.hour(t: r._time) < 16" },
-          { "selected": false, "text": "V2 (16-24)",    "value": "date.hour(t: r._time) >= 16 and date.hour(t: r._time) < 24" },
-          { "selected": false, "text": "V3 (00-08)",    "value": "date.hour(t: r._time) < 8" }
+          { "selected": false, "text": "24 saat",                 "value": "true" },
+          { "selected": true,  "text": "Mesai (V1+V2)",           "value": "in_v1(r) or in_v2(r)" },
+          { "selected": false, "text": "V1 (08:30-18:30)",        "value": "in_v1(r)" },
+          { "selected": false, "text": "V2 (20:30-06:30)",        "value": "in_v2(r)" },
+          { "selected": false, "text": "Ek mesai (V1/V2 disi)",   "value": "not (in_v1(r) or in_v2(r))" }
         ],
-        "query": "24 saat : true, Mesai (08-17) : date.hour(t: r._time) >= 8 and date.hour(t: r._time) < 17, V1 (08-16) : date.hour(t: r._time) >= 8 and date.hour(t: r._time) < 16, V2 (16-24) : date.hour(t: r._time) >= 16 and date.hour(t: r._time) < 24, V3 (00-08) : date.hour(t: r._time) < 8",
+        "query": "24 saat : true, Mesai (V1+V2) : in_v1(r) or in_v2(r), V1 (08:30-18:30) : in_v1(r), V2 (20:30-06:30) : in_v2(r), Ek mesai (V1/V2 disi) : not (in_v1(r) or in_v2(r))",
         "skipUrlSync": false,
         "type": "custom"
       }
@@ -461,6 +514,6 @@
   "timezone": "browser",
   "title": "SE Havacilik - Tezgah OEE Genel Bakis",
   "uid": "oee-overview",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }
